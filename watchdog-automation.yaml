@@ -1,0 +1,107 @@
+blueprint:
+  name: Watchdog for Automation Monitoring
+  description: >
+    Monitors that selected automations are active. If any is turned off, it will be turned back on and a warning will be sent via mobile, popup, and speakers.
+  domain: automation
+  input:
+    automations:
+      name: Automations to Monitor
+      description: Choose the automations that should be monitored
+      selector:
+        entity:
+          domain: automation
+          multiple: true
+    mobile_notify:
+      name: Mobile Notification
+      description: Choose the notification service for push notifications
+      selector:
+        entity:
+          domain: notify
+    media_player:
+      name: Media Player
+      description: Choose the speaker for audio warning
+      selector:
+        entity:
+          domain: media_player
+    logbook_entity:
+      name: Logbook Entity
+      description: Choose the entity for the log entry
+      selector:
+        entity:
+          domain: logbook
+          multiple: false
+
+trigger:
+  - platform: state
+    entity_id: !input 'automations'
+    to: "off"
+
+action:
+  - variables:
+      message: >
+        ❗ Watchdog: The automation "{{ trigger.to_state.name }}" was turned off. It has now been reactivated.
+
+  # Reactivate the automation
+  - service: automation.turn_on
+    target:
+      entity_id: "{{ trigger.entity_id }}"
+
+  # Add log entry
+  - service: logbook.log
+    data:
+      name: Watchdog
+      message: "{{ message }}"
+      entity_id: "{{ trigger.entity_id }}"
+
+  # Send mobile notification
+  - service: !input 'mobile_notify'
+    data:
+      title: 🚨 WATCHDOG ALARM
+      message: "{{ message }}"
+      data:
+        push:
+          sound:
+            name: default
+            critical: 1
+            volume: 1
+
+  # Show popup on screen
+  - service: browser_mod.popup
+    data:
+      title: "⚠️ Watchdog Alarm"
+      content:
+        type: markdown
+        content: >
+          **An important automation was turned off!**
+          
+          Automation: `{{ trigger.to_state.name }}`
+          
+          It has now been reactivated.
+      deviceID:
+        - this
+      style:
+        width: 400px
+        background: orange
+        color: black
+        font-size: 18px
+
+  # Speech synthesis on speakers
+  - service: media_player.volume_set
+    target:
+      entity_id: !input 'media_player'
+    data:
+      volume_level: 0.5
+
+  - service: tts.google_translate_say
+    target:
+      entity_id: !input 'media_player'
+    data:
+      message: "{{ message }}"
+      language: en
+
+  # Close popup after 15 seconds
+  - delay: "00:00:15"
+  - service: browser_mod.close_popup
+    data: {}
+
+mode: parallel
